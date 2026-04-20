@@ -149,8 +149,8 @@ def _download_file(file_id: str) -> bytes:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _load_influx_config(folder_id: str) -> Optional[dict]:
-    files = _list_drive_files(folder_id, "influx_config.json")
+def _load_influx_config(_folder_id: str) -> Optional[dict]:
+    files = _list_drive_files(_folder_id, "influx_config.json")
     if not files:
         return None
     return json.loads(_download_file(files[0]["id"]).decode("utf-8"))
