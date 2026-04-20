@@ -288,10 +288,20 @@ def _global_max(mv_df: pd.DataFrame) -> pd.DataFrame:
     """Single max |value| row per sensor × dimension."""
     if mv_df.empty:
         return pd.DataFrame()
-    return (mv_df.groupby(["sensor","dimension"])
-                 .apply(lambda g: g.loc[g["abs_value"].idxmax()])
-                 .reset_index(drop=True)
-                 [["sensor","dimension","abs_value","raw_value"]])
+    
+    # More robust approach: use groupby with idxmax and then lookup
+    try:
+        idx = mv_df.groupby(["sensor", "dimension"])["abs_value"].idxmax()
+        result = mv_df.loc[idx][["sensor", "dimension", "abs_value", "raw_value"]].reset_index(drop=True)
+        return result
+    except Exception:
+        # Fallback: manually find max for each group
+        result_rows = []
+        for (sensor, dimension), group in mv_df.groupby(["sensor", "dimension"]):
+            if not group.empty and not group["abs_value"].isna().all():
+                max_idx = group["abs_value"].idxmax()
+                result_rows.append(group.loc[max_idx, ["sensor", "dimension", "abs_value", "raw_value"]])
+        return pd.DataFrame(result_rows) if result_rows else pd.DataFrame()
 
 
 def _check_thresholds(max_df: pd.DataFrame, rules: List[dict]) -> pd.DataFrame:
