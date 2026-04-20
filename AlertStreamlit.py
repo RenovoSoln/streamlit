@@ -286,6 +286,8 @@ def _global_max(mv_df: pd.DataFrame) -> pd.DataFrame:
     _OUT_COLS = ["sensor", "dimension", "abs_value", "raw_value"]
     if mv_df.empty or not {"sensor", "dimension", "abs_value", "raw_value"}.issubset(mv_df.columns):
         return pd.DataFrame(columns=_OUT_COLS)
+
+    # Sort by abs_value descending, then keep first (max) of each sensor/dimension
     result = (mv_df.sort_values("abs_value", ascending=False)
                    .groupby(["sensor", "dimension"], as_index=False)
                    .first()
@@ -331,7 +333,8 @@ with st.sidebar:
     gdrive_ok = (GDRIVE_OK
                  and "GOOGLE_SERVICE_ACCOUNT" in st.secrets
                  and "GDRIVE_FOLDER_ID"       in st.secrets)
-    folder_id = st.secrets.get("GDRIVE_FOLDER_ID", "") if gdrive_ok else ""
+    folder_id = st.secrets.get("GDRIVE_FOLDER_ID","") if gdrive_ok else ""
+
     st.markdown("### 📋 Alert History Source")
     xml_src = st.radio("src", ["☁️ Google Drive","📤 Upload XML"],
                        index=0, label_visibility="collapsed")
@@ -420,18 +423,17 @@ with tab_hist:
         st.subheader("📊 Violations Over Time")
         ds = df.copy()
         ds["key"]   = ds["sensor"] + " / " + ds["dimension"]
-        ds["index"] = range(len(ds))
         sf = go.Figure()
         for i,key in enumerate(ds["key"].unique()):
             sub = ds[ds["key"]==key]; col = DIM_COLORS[i%len(DIM_COLORS)]
             for _,row in sub.iterrows():
-                sf.add_trace(go.Scatter(x=[row["index"],row["index"]], y=[0,row["max_value"]],
+                sf.add_trace(go.Scatter(x=[row["timestamp"],row["timestamp"]], y=[0,row["max_value"]],
                     mode="lines", line=dict(color=col,width=1.5), showlegend=False, hoverinfo="skip"))
-            sf.add_trace(go.Scatter(x=sub["index"], y=sub["max_value"], mode="markers", name=key,
+            sf.add_trace(go.Scatter(x=sub["timestamp"], y=sub["max_value"], mode="markers", name=key,
                 marker=dict(size=8,color=col),
-                hovertemplate=f"<b>{key}</b><br>Value: %{{y:.5f}}<br>Cycle: %{{customdata[0]}}<br>"
-                              "Level: %{customdata[1]}<extra></extra>",
-                customdata=sub[["cycle","alert_level"]].values))
+                hovertemplate=f"<b>{key}</b><br>Time: %{{x|%Y-%m-%d %H:%M:%S}}<br>Value: %{{y:.5f}}<br>"
+                              "Level: %{customdata[0]}<extra></extra>",
+                customdata=sub[["alert_level"]].values))
         for rn,rdf in ds.groupby("rule"):
             thr=rdf["threshold"].iloc[0]; lc=LEVEL_COLORS.get(rdf["alert_level"].iloc[0],"#ffaa44")
             sf.add_hline(y=thr, line_dash="dash", line_color=lc, line_width=1.5,
@@ -439,7 +441,7 @@ with tab_hist:
         sf.update_layout(paper_bgcolor=THEME_BG, plot_bgcolor=THEME_MID,
             font=dict(color=THEME_TEXT,size=11),
             legend=dict(bgcolor=THEME_MID,bordercolor="#3a4060",borderwidth=1),
-            xaxis=dict(title="Alert Index",gridcolor="#3a4060"),
+            xaxis=dict(title="Time (UTC)",gridcolor="#3a4060"),
             yaxis=dict(title="Max Value",gridcolor="#3a4060"),
             margin=dict(l=60,r=20,t=30,b=50), height=420)
         st.plotly_chart(sf, width="stretch")
