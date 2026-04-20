@@ -284,10 +284,13 @@ def _global_max(mv_df: pd.DataFrame) -> pd.DataFrame:
     """Single max |value| row per sensor × dimension."""
     if mv_df.empty:
         return pd.DataFrame()
-    return (mv_df.groupby(["sensor","dimension"])
-                 .apply(lambda g: g.loc[g["abs_value"].idxmax()])
-                 .reset_index(drop=True)
-                 [["sensor","dimension","abs_value","raw_value"]])
+    
+    # Sort by abs_value descending, then keep first (max) of each sensor/dimension
+    result = (mv_df.sort_values("abs_value", ascending=False)
+                   .groupby(["sensor", "dimension"], as_index=False)
+                   .first()
+                   [["sensor", "dimension", "abs_value", "raw_value"]])
+    return result
 
 
 def _check_thresholds(max_df: pd.DataFrame, rules: List[dict]) -> pd.DataFrame:
