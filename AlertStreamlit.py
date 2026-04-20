@@ -262,9 +262,6 @@ def _fetch_influx(cfg: dict, start: str, stop: Optional[str]):
     return frame, query
 
 
-_EMPTY_MV = pd.DataFrame(columns=["_time","sensor","dimension","abs_value","raw_value"])
-
-
 def _timeseries_abs(frame: pd.DataFrame, fields: List[str]) -> pd.DataFrame:
     """Long-format |value| time-series for every sensor × dim."""
     rows = []
@@ -280,20 +277,21 @@ def _timeseries_abs(frame: pd.DataFrame, fields: List[str]) -> pd.DataFrame:
             tmp["sensor"]    = sensor
             tmp["dimension"] = dim
             rows.append(tmp[["_time","sensor","dimension","abs_value","raw_value"]])
-    return pd.concat(rows, ignore_index=True).sort_values("_time") if rows else _EMPTY_MV.copy()
+    _COLS = ["_time", "sensor", "dimension", "abs_value", "raw_value"]
+    return pd.concat(rows, ignore_index=True).sort_values("_time") if rows else pd.DataFrame(columns=_COLS)
 
 
 def _global_max(mv_df: pd.DataFrame) -> pd.DataFrame:
     """Single max |value| row per sensor × dimension."""
-    required = {"sensor", "dimension", "abs_value", "raw_value"}
-    if mv_df.empty or not required.issubset(mv_df.columns):
-        return pd.DataFrame(columns=["sensor", "dimension", "abs_value", "raw_value"])
+    _OUT_COLS = ["sensor", "dimension", "abs_value", "raw_value"]
+    if mv_df.empty or not {"sensor", "dimension", "abs_value", "raw_value"}.issubset(mv_df.columns):
+        return pd.DataFrame(columns=_OUT_COLS)
 
     # Sort by abs_value descending, then keep first (max) of each sensor/dimension
     result = (mv_df.sort_values("abs_value", ascending=False)
                    .groupby(["sensor", "dimension"], as_index=False)
                    .first()
-                   [["sensor", "dimension", "abs_value", "raw_value"]])
+                   [_OUT_COLS])
     return result
 
 
