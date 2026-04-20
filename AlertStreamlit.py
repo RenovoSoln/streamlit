@@ -332,7 +332,14 @@ with st.sidebar:
     gdrive_ok = (GDRIVE_OK
                  and "GOOGLE_SERVICE_ACCOUNT" in st.secrets
                  and "GDRIVE_FOLDER_ID"       in st.secrets)
-    folder_id = st.secrets.get("GDRIVE_FOLDER_ID","").strip().strip('"').strip("'") if gdrive_ok else ""
+    
+    # Safely get and sanitize folder_id
+    if gdrive_ok:
+        raw_folder_id = st.secrets.get("GDRIVE_FOLDER_ID", "")
+        # Ensure it's a string and sanitize it
+        folder_id = str(raw_folder_id).strip().strip('"').strip("'")
+    else:
+        folder_id = ""
     
     # Validate folder_id if Google Drive is configured
     if gdrive_ok and not folder_id:
