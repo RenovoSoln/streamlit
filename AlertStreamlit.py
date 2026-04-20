@@ -129,10 +129,6 @@ def _drive_service():
 
 
 def _list_drive_files(folder_id: str, name_filter: str = "") -> List[dict]:
-    # Strip whitespace and quotes that might be in the folder_id
-    folder_id = folder_id.strip().strip('"').strip("'")
-    if not folder_id:
-        raise ValueError("folder_id is empty")
     q = f"'{folder_id}' in parents and trashed=false"
     if name_filter:
         q += f" and name contains '{name_filter}'"
@@ -288,13 +284,10 @@ def _global_max(mv_df: pd.DataFrame) -> pd.DataFrame:
     """Single max |value| row per sensor × dimension."""
     if mv_df.empty:
         return pd.DataFrame()
-    
-    # Simple and stable: sort by abs_value descending, then take first of each group
-    result = (mv_df.sort_values("abs_value", ascending=False)
-                   .groupby(["sensor", "dimension"], as_index=False)
-                   .first()
-                   [["sensor", "dimension", "abs_value", "raw_value"]])
-    return result
+    return (mv_df.groupby(["sensor","dimension"])
+                 .apply(lambda g: g.loc[g["abs_value"].idxmax()])
+                 .reset_index(drop=True)
+                 [["sensor","dimension","abs_value","raw_value"]])
 
 
 def _check_thresholds(max_df: pd.DataFrame, rules: List[dict]) -> pd.DataFrame:
@@ -335,29 +328,7 @@ with st.sidebar:
     gdrive_ok = (GDRIVE_OK
                  and "GOOGLE_SERVICE_ACCOUNT" in st.secrets
                  and "GDRIVE_FOLDER_ID"       in st.secrets)
-    
-    # Safely get and sanitize folder_id
-    if gdrive_ok:
-        raw_folder_id = st.secrets.get("GDRIVE_FOLDER_ID", "")
-        # Ensure it's a string and sanitize it
-        folder_id = str(raw_folder_id).strip().strip('"').strip("'")
-    else:
-        folder_id = ""
-    
-    # Validate folder_id if Google Drive is configured
-    if gdrive_ok and not folder_id:
-        st.warning("⚠️ GDRIVE_FOLDER_ID is configured but empty. Please check your secrets.")
-        gdrive_ok = False
-    
-    # Debug info
-    with st.expander("🔍 Debug Info"):
-        st.write("**Google Drive Status:**", "✅ Configured" if gdrive_ok else "❌ Not configured")
-        if gdrive_ok:
-            st.write("**Folder ID (sanitized):**")
-            st.code(folder_id)
-            st.caption(f"Length: {len(folder_id)} characters")
-        else:
-            st.write("Google Drive not configured or missing credentials")
+    folder_id = st.secrets.get("GDRIVE_FOLDER_ID","") if gdrive_ok else ""
 
     st.markdown("### 📋 Alert History Source")
     xml_src = st.radio("src", ["☁️ Google Drive","📤 Upload XML"],
