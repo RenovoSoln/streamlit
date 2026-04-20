@@ -262,6 +262,9 @@ def _fetch_influx(cfg: dict, start: str, stop: Optional[str]):
     return frame, query
 
 
+_EMPTY_MV = pd.DataFrame(columns=["_time","sensor","dimension","abs_value","raw_value"])
+
+
 def _timeseries_abs(frame: pd.DataFrame, fields: List[str]) -> pd.DataFrame:
     """Long-format |value| time-series for every sensor × dim."""
     rows = []
@@ -277,14 +280,15 @@ def _timeseries_abs(frame: pd.DataFrame, fields: List[str]) -> pd.DataFrame:
             tmp["sensor"]    = sensor
             tmp["dimension"] = dim
             rows.append(tmp[["_time","sensor","dimension","abs_value","raw_value"]])
-    return pd.concat(rows, ignore_index=True).sort_values("_time") if rows else pd.DataFrame()
+    return pd.concat(rows, ignore_index=True).sort_values("_time") if rows else _EMPTY_MV.copy()
 
 
 def _global_max(mv_df: pd.DataFrame) -> pd.DataFrame:
     """Single max |value| row per sensor × dimension."""
-    if mv_df.empty:
-        return pd.DataFrame()
-    
+    required = {"sensor", "dimension", "abs_value", "raw_value"}
+    if mv_df.empty or not required.issubset(mv_df.columns):
+        return pd.DataFrame(columns=["sensor", "dimension", "abs_value", "raw_value"])
+
     # Sort by abs_value descending, then keep first (max) of each sensor/dimension
     result = (mv_df.sort_values("abs_value", ascending=False)
                    .groupby(["sensor", "dimension"], as_index=False)
@@ -340,9 +344,9 @@ with st.sidebar:
 
     if xml_src == "☁️ Google Drive" and gdrive_ok:
         c1, c2 = st.columns(2)
-        if c1.button("🔄 Refresh", use_container_width=True):
+        if c1.button("🔄 Refresh", width="stretch"):
             _download_file.clear(); st.rerun()
-        if c2.button("🗑️ Cache",   use_container_width=True):
+        if c2.button("🗑️ Cache",   width="stretch"):
             st.cache_data.clear();  st.rerun()
         try:
             xfiles = _list_drive_files(folder_id, ".xml")
@@ -443,7 +447,7 @@ with tab_hist:
             xaxis=dict(title="Alert Index",gridcolor="#3a4060"),
             yaxis=dict(title="Max Value",gridcolor="#3a4060"),
             margin=dict(l=60,r=20,t=30,b=50), height=420)
-        st.plotly_chart(sf, use_container_width=True)
+        st.plotly_chart(sf, width="stretch")
 
         # Pie + bar
         st.markdown("---")
@@ -458,7 +462,7 @@ with tab_hist:
                 hovertemplate="%{label}: %{value} (%{percent})<extra></extra>"))
             pf.update_layout(paper_bgcolor=THEME_BG,font=dict(color=THEME_TEXT),
                 showlegend=False,margin=dict(l=10,r=10,t=10,b=10),height=280)
-            st.plotly_chart(pf, use_container_width=True)
+            st.plotly_chart(pf, width="stretch")
         with rc_:
             st.subheader("📈 Violations by Sensor")
             bd = df.groupby(["sensor","alert_level"]).size().reset_index(name="count")
@@ -470,7 +474,7 @@ with tab_hist:
                 legend=dict(bgcolor=THEME_MID,bordercolor="#3a4060",borderwidth=1,title_text="Level"),
                 xaxis=dict(gridcolor="#3a4060"),yaxis=dict(gridcolor="#3a4060"),
                 margin=dict(l=40,r=10,t=20,b=50),height=280)
-            st.plotly_chart(bf, use_container_width=True)
+            st.plotly_chart(bf, width="stretch")
 
         # Table
         st.markdown("---")
@@ -482,7 +486,7 @@ with tab_hist:
         disp["max_value"] = disp["max_value"].map("{:.6f}".format)
         disp["threshold"] = disp["threshold"].map("{:.6f}".format)
         st.dataframe(disp.style.map(_level_css, subset=["alert_level"]),
-                     use_container_width=True, height=400)
+                     width="stretch", height=400)
 
         d1_,d2_ = st.columns(2)
         buf = io.StringIO(); disp.to_csv(buf, index=False)
@@ -619,7 +623,7 @@ with tab_live:
                 if not viol_df.empty else set())
 
     # ── KPIs ──────────────────────────────────────────────────────────────────
-    ft_str = datetime.utcfromtimestamp(ft).strftime("%H:%M:%S UTC") if ft else "–"
+    ft_str = datetime.fromtimestamp(ft, tz=timezone.utc).strftime("%H:%M:%S UTC") if ft else "–"
     k1,k2,k3,k4,k5 = st.columns(5)
     k1.metric("Sensors",     frame["device_name"].nunique())
     k2.metric("Data Points", f"{len(frame):,}")
@@ -688,7 +692,7 @@ with tab_live:
             bf.add_annotation(xref="paper",yref="paper", x=xp, y=1.07,
                 text=f'<span style="color:{clr}">{lbl}</span>',
                 showarrow=False, font=dict(size=11))
-        st.plotly_chart(bf, use_container_width=True)
+        st.plotly_chart(bf, width="stretch")
 
     # ══════════════════════════════════════════════════════════════════════════
     # CHART 2 — Time-series with range slider
@@ -726,7 +730,7 @@ with tab_live:
                 legend=dict(bgcolor=THEME_MID, bordercolor="#3a4060", borderwidth=1),
                 margin=dict(l=60,r=20,t=40,b=80), height=460,
             )
-            st.plotly_chart(tsf, use_container_width=True)
+            st.plotly_chart(tsf, width="stretch")
 
     # ── Violations table ──────────────────────────────────────────────────────
     st.markdown("---")
@@ -737,7 +741,7 @@ with tab_live:
         for col in ["abs_value","raw_value","threshold"]:
             dv[col] = dv[col].map("{:.6f}".format)
         st.dataframe(dv.style.map(_level_css, subset=["alert_level"]),
-                     use_container_width=True, height=200)
+                     width="stretch", height=200)
     else:
         if thresholds:
             st.success("✅ All sensors within defined thresholds.")
