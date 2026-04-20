@@ -286,8 +286,6 @@ def _global_max(mv_df: pd.DataFrame) -> pd.DataFrame:
     _OUT_COLS = ["sensor", "dimension", "abs_value", "raw_value"]
     if mv_df.empty or not {"sensor", "dimension", "abs_value", "raw_value"}.issubset(mv_df.columns):
         return pd.DataFrame(columns=_OUT_COLS)
-
-    # Sort by abs_value descending, then keep first (max) of each sensor/dimension
     result = (mv_df.sort_values("abs_value", ascending=False)
                    .groupby(["sensor", "dimension"], as_index=False)
                    .first()
@@ -333,8 +331,7 @@ with st.sidebar:
     gdrive_ok = (GDRIVE_OK
                  and "GOOGLE_SERVICE_ACCOUNT" in st.secrets
                  and "GDRIVE_FOLDER_ID"       in st.secrets)
-    folder_id = st.secrets.get("GDRIVE_FOLDER_ID","") if gdrive_ok else ""
-
+    folder_id = st.secrets.get("GDRIVE_FOLDER_ID", "") if gdrive_ok else ""
     st.markdown("### 📋 Alert History Source")
     xml_src = st.radio("src", ["☁️ Google Drive","📤 Upload XML"],
                        index=0, label_visibility="collapsed")
