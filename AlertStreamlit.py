@@ -350,6 +350,51 @@ def _level_css(val):
     return ""
 
 
+def _render_table(df: pd.DataFrame, level_col: str = "alert_level", max_height: int = 420):
+    """Render a DataFrame as a fully dark-themed HTML table (canvas-free)."""
+    LEVEL_CELL = {"Critical": "#ff6b7a", "Warning": "#ffaa44"}
+    rows_html = ""
+    for _, row in df.iterrows():
+        cells = ""
+        for col in df.columns:
+            val = row[col]
+            style = ""
+            if col == level_col:
+                style = f'style="color:{LEVEL_CELL.get(str(val), "#e8eaf0")};font-weight:700;"'
+            cells += f"<td {style}>{val}</td>"
+        rows_html += f"<tr>{cells}</tr>"
+
+    headers = "".join(f"<th>{c}</th>" for c in df.columns)
+
+    html = f"""
+<div style="overflow:auto;max-height:{max_height}px;border:1px solid #3a4060;border-radius:8px;">
+<table style="width:100%;border-collapse:collapse;font-size:0.82rem;
+              font-family:'Source Sans Pro',sans-serif;">
+  <thead>
+    <tr style="position:sticky;top:0;background:#1e2130;z-index:1;">
+      {headers}
+    </tr>
+  </thead>
+  <tbody>{rows_html}</tbody>
+</table>
+</div>
+<style>
+  table td, table th {{
+    padding: 7px 12px;
+    border-bottom: 1px solid #3a4060;
+    color: #e8eaf0;
+    text-align: left;
+    white-space: nowrap;
+  }}
+  table th {{ color: #9aa0b8; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing:.04em; }}
+  table tbody tr:hover {{ background-color: #2a3050; }}
+  table tbody tr:nth-child(even) {{ background-color: #1a1f35; }}
+  table tbody tr:nth-child(odd)  {{ background-color: #252a3d; }}
+</style>
+"""
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def _fmt_ts(iso):
     try:
         return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M")
@@ -628,8 +673,7 @@ with tab_hist:
         disp["timestamp"] = disp["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S AEST")
         disp["max_value"] = disp["max_value"].map("{:.6f}".format)
         disp["threshold"] = disp["threshold"].map("{:.6f}".format)
-        st.dataframe(disp.style.map(_level_css, subset=["alert_level"]),
-                     width="stretch", height=400)
+        _render_table(disp, max_height=400)
 
         d1_,d2_ = st.columns(2)
         buf = io.StringIO(); disp.to_csv(buf, index=False)
@@ -884,8 +928,7 @@ with tab_live:
                       "rule","threshold","operator","alert_level"]].copy()
         for col in ["abs_value","raw_value","threshold"]:
             dv[col] = dv[col].map("{:.6f}".format)
-        st.dataframe(dv.style.map(_level_css, subset=["alert_level"]),
-                     width="stretch", height=200)
+        _render_table(dv, max_height=220)
     else:
         if thresholds:
             st.success("✅ All sensors within defined thresholds.")
