@@ -53,6 +53,8 @@ import json
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+
+AEST = timezone(timedelta(hours=10))   # Brisbane / Queensland — no DST
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -192,7 +194,7 @@ def _load_df(records):
     if not records:
         return pd.DataFrame()
     df = pd.DataFrame(records)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True).dt.tz_convert(AEST)
     df["date"] = df["timestamp"].dt.date
     df["hour"] = df["timestamp"].dt.hour
     return df.sort_values("timestamp").reset_index(drop=True)
@@ -255,7 +257,7 @@ def _fetch_influx(cfg: dict, start: str, stop: Optional[str]):
     frame = frame.drop(columns=[c for c in frame.columns
                                  if c.startswith("result") or c.startswith("table")],
                        errors="ignore")
-    frame["_time"] = pd.to_datetime(frame["_time"], errors="coerce", utc=True)
+    frame["_time"] = pd.to_datetime(frame["_time"], errors="coerce", utc=True).dt.tz_convert(AEST)
     frame = (frame.dropna(subset=["_time"])
                   .sort_values(["device_name","_time"])
                   .reset_index(drop=True))
@@ -441,7 +443,7 @@ with tab_hist:
         sf.update_layout(paper_bgcolor=THEME_BG, plot_bgcolor=THEME_MID,
             font=dict(color=THEME_TEXT,size=11),
             legend=dict(bgcolor=THEME_MID,bordercolor="#3a4060",borderwidth=1),
-            xaxis=dict(title="Time (UTC)",gridcolor="#3a4060"),
+            xaxis=dict(title="Time (AEST)",gridcolor="#3a4060"),
             yaxis=dict(title="Max Value",gridcolor="#3a4060"),
             margin=dict(l=60,r=20,t=30,b=50), height=420)
         st.plotly_chart(sf, width="stretch")
@@ -570,15 +572,16 @@ with tab_live:
         flux_start, flux_stop = "-1m", None
         should_fetch = True
     else:
-        st.markdown("#### 🗓️ Date & Time Range (UTC)")
-        now_utc = datetime.now(timezone.utc)
+        st.markdown("#### 🗓️ Date & Time Range (AEST)")
+        now_aest = datetime.now(AEST)
         dc1,dc2,dc3,dc4 = st.columns(4)
-        s_date = dc1.date_input("Start date", value=(now_utc-timedelta(hours=1)).date(), key="sd")
-        s_time = dc2.time_input("Start time", value=(now_utc-timedelta(hours=1)).time(), key="st")
-        e_date = dc3.date_input("End date",   value=now_utc.date(),                      key="ed")
-        e_time = dc4.time_input("End time",   value=now_utc.time(),                      key="et")
-        s_dt   = datetime.combine(s_date, s_time, tzinfo=timezone.utc)
-        e_dt   = datetime.combine(e_date, e_time, tzinfo=timezone.utc)
+        s_date = dc1.date_input("Start date", value=(now_aest-timedelta(hours=1)).date(), key="sd")
+        s_time = dc2.time_input("Start time", value=(now_aest-timedelta(hours=1)).time(), key="st")
+        e_date = dc3.date_input("End date",   value=now_aest.date(),                      key="ed")
+        e_time = dc4.time_input("End time",   value=now_aest.time(),                      key="et")
+        # Treat picker values as AEST, convert to UTC for InfluxDB Flux query
+        s_dt   = datetime.combine(s_date, s_time, tzinfo=AEST).astimezone(timezone.utc)
+        e_dt   = datetime.combine(e_date, e_time, tzinfo=AEST).astimezone(timezone.utc)
         flux_start = s_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         flux_stop  = e_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         should_fetch = st.button("🔍 Fetch Data", type="primary", key="fetchbtn")
@@ -620,7 +623,7 @@ with tab_live:
                 if not viol_df.empty else set())
 
     # ── KPIs ──────────────────────────────────────────────────────────────────
-    ft_str = datetime.fromtimestamp(ft, tz=timezone.utc).strftime("%H:%M:%S UTC") if ft else "–"
+    ft_str = datetime.fromtimestamp(ft, tz=AEST).strftime("%H:%M:%S AEST") if ft else "–"
     k1,k2,k3,k4,k5 = st.columns(5)
     k1.metric("Sensors",     frame["device_name"].nunique())
     k2.metric("Data Points", f"{len(frame):,}")
@@ -721,7 +724,7 @@ with tab_live:
             tsf.update_layout(
                 paper_bgcolor=THEME_BG, plot_bgcolor=THEME_MID,
                 font=dict(color=THEME_TEXT,size=11),
-                xaxis=dict(title="Time (UTC)", gridcolor="#3a4060",
+                xaxis=dict(title="Time (AEST)", gridcolor="#3a4060",
                            rangeslider=dict(visible=True, bgcolor=THEME_MID, thickness=0.06)),
                 yaxis=dict(title="|Value|", gridcolor="#3a4060"),
                 legend=dict(bgcolor=THEME_MID, bordercolor="#3a4060", borderwidth=1),
