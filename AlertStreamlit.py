@@ -408,8 +408,8 @@ with tab_hist:
         n_v  = len(df)
         n_cr = int((df["alert_level"]=="Critical").sum())
         pct  = f"{100*n_cr/n_v:.1f}%" if n_v else "0%"
-        ts0  = df["timestamp"].dropna().min().strftime("%Y-%m-%d %H:%M") if not df["timestamp"].isna().all() else "–"
-        ts1  = df["timestamp"].dropna().max().strftime("%Y-%m-%d %H:%M") if not df["timestamp"].isna().all() else "–"
+        ts0  = df["timestamp"].dropna().min().strftime("%Y-%m-%d %H:%M AEST") if not df["timestamp"].isna().all() else "–"
+        ts1  = df["timestamp"].dropna().max().strftime("%Y-%m-%d %H:%M AEST") if not df["timestamp"].isna().all() else "–"
         proj = df["project"].iloc[0] if "project" in df.columns else "–"
 
         c1,c2,c3,c4,c5 = st.columns(5)
@@ -481,7 +481,7 @@ with tab_hist:
         show_cols = ["timestamp","cycle","sensor","dimension","rule",
                      "max_value","threshold","operator","alert_level"]
         disp = df[[c for c in show_cols if c in df.columns]].copy()
-        disp["timestamp"] = disp["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+        disp["timestamp"] = disp["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S AEST")
         disp["max_value"] = disp["max_value"].map("{:.6f}".format)
         disp["threshold"] = disp["threshold"].map("{:.6f}".format)
         st.dataframe(disp.style.map(_level_css, subset=["alert_level"]),
@@ -492,7 +492,7 @@ with tab_hist:
         d1_.download_button("⬇️ Download CSV", buf.getvalue().encode(),
             f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv","text/csv")
         jdf = df[[c for c in show_cols if c in df.columns]].copy()
-        jdf["timestamp"] = jdf["timestamp"].astype(str)
+        jdf["timestamp"] = jdf["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S AEST")
         d2_.download_button("⬇️ Download JSON",
             json.dumps(jdf.to_dict(orient="records"),indent=2).encode(),
             f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json","application/json")
