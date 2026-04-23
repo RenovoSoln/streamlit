@@ -127,7 +127,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"],
 
 /* ── All text ────────────────────────────────────────────────────────────── */
 h1, h2, h3, h4, h5, h6 { color: #e8eaf0 !important; }
-p, span, label, div, li { color: #e8eaf0 !important; }
+p, span, label, li { color: #e8eaf0 !important; }
 .stMarkdown, .stMarkdown p, .stMarkdown span { color: #e8eaf0 !important; }
 [data-testid="stCaption"], [data-testid="stCaption"] * { color: #9aa0b8 !important; }
 
@@ -198,10 +198,8 @@ input, textarea, [data-baseweb="input"], [data-baseweb="textarea"],
 }
 
 /* ── Dataframe / table ───────────────────────────────────────────────────── */
-[data-testid="stDataFrame"], .stDataFrame,
-[data-testid="stDataFrame"] * {
+[data-testid="stDataFrame"] {
     background-color: #252a3d !important;
-    color: #e8eaf0 !important;
 }
 [data-testid="stDataFrame"] th {
     background-color: #1e2130 !important;
