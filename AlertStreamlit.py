@@ -44,6 +44,15 @@ requirements.txt:
   google-auth-httplib2>=0.2.0
   google-api-python-client>=2.120.0
   influxdb-client>=1.40.0
+
+.streamlit/config.toml  (create this file — forces dark mode in ALL browsers):
+─────────────────────────────────────────────────────────────────────────────
+[theme]
+base            = "dark"
+backgroundColor = "#1e2130"
+secondaryBackgroundColor = "#252a3d"
+textColor       = "#e8eaf0"
+primaryColor    = "#4a9eff"
 """
 
 from __future__ import annotations
@@ -96,22 +105,159 @@ DIM_COLORS   = px.colors.qualitative.D3
 
 st.markdown("""
 <style>
-html,body,[data-testid="stAppViewContainer"],[data-testid="stMain"]{
-    background-color:#1e2130!important;color:#e8eaf0!important;}
-[data-testid="stSidebar"]{background-color:#16192b!important;}
-[data-testid="metric-container"]{background-color:#252a3d;border:1px solid #3a4060;
-    border-radius:10px;padding:14px 18px;}
-[data-testid="metric-container"] label{color:#9aa0b8!important;font-size:.82rem;}
-[data-testid="metric-container"] [data-testid="stMetricValue"]{
-    color:#4a9eff!important;font-size:1.8rem;font-weight:700;}
-div.stButton>button{background-color:#4a9eff;color:white;border:none;
-    border-radius:6px;padding:.4rem 1.2rem;font-weight:600;}
-div.stButton>button:hover{background-color:#2d7de8;}
-h1,h2,h3,h4{color:#e8eaf0!important;}
-.stTabs [data-baseweb="tab-list"]{background-color:#16192b;gap:4px;}
-.stTabs [data-baseweb="tab"]{background-color:#252a3d;border-radius:6px 6px 0 0;
-    color:#9aa0b8;padding:8px 24px;font-weight:600;}
-.stTabs [aria-selected="true"]{background-color:#1e2130!important;color:#4a9eff!important;}
+/* ── Base & layout ───────────────────────────────────────────────────────── */
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"],
+[data-testid="block-container"], .main, .block-container,
+[data-testid="stVerticalBlock"], [data-testid="stHorizontalBlock"] {
+    background-color: #1e2130 !important;
+    color: #e8eaf0 !important;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"], [data-testid="stSidebar"] > div {
+    background-color: #16192b !important;
+    color: #e8eaf0 !important;
+}
+[data-testid="stSidebar"] * { color: #e8eaf0 !important; }
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3, [data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] span {
+    color: #e8eaf0 !important;
+}
+
+/* ── All text ────────────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 { color: #e8eaf0 !important; }
+p, span, label, div, li { color: #e8eaf0 !important; }
+.stMarkdown, .stMarkdown p, .stMarkdown span { color: #e8eaf0 !important; }
+[data-testid="stCaption"], [data-testid="stCaption"] * { color: #9aa0b8 !important; }
+
+/* ── Metrics ─────────────────────────────────────────────────────────────── */
+[data-testid="metric-container"] {
+    background-color: #252a3d !important;
+    border: 1px solid #3a4060 !important;
+    border-radius: 10px !important;
+    padding: 14px 18px !important;
+}
+[data-testid="metric-container"] label,
+[data-testid="metric-container"] [data-testid="stMetricLabel"] *  { color: #9aa0b8 !important; font-size: .82rem !important; }
+[data-testid="metric-container"] [data-testid="stMetricValue"],
+[data-testid="metric-container"] [data-testid="stMetricValue"] *  { color: #4a9eff !important; font-size: 1.8rem !important; font-weight: 700 !important; }
+[data-testid="stMetricDelta"] * { color: #9aa0b8 !important; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+div.stButton > button {
+    background-color: #4a9eff !important; color: white !important;
+    border: none !important; border-radius: 6px !important;
+    padding: .4rem 1.2rem !important; font-weight: 600 !important;
+}
+div.stButton > button:hover { background-color: #2d7de8 !important; }
+div.stButton > button * { color: white !important; }
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] { background-color: #16192b !important; gap: 4px !important; }
+.stTabs [data-baseweb="tab"] {
+    background-color: #252a3d !important; border-radius: 6px 6px 0 0 !important;
+    color: #9aa0b8 !important; padding: 8px 24px !important; font-weight: 600 !important;
+}
+.stTabs [data-baseweb="tab"] * { color: #9aa0b8 !important; }
+.stTabs [aria-selected="true"] { background-color: #1e2130 !important; color: #4a9eff !important; }
+.stTabs [aria-selected="true"] * { color: #4a9eff !important; }
+.stTabs [data-baseweb="tab-panel"] { background-color: #1e2130 !important; }
+
+/* ── Inputs: text, number, date, time ───────────────────────────────────── */
+input, textarea, [data-baseweb="input"], [data-baseweb="textarea"],
+[data-testid="stTextInput"] input, [data-testid="stNumberInput"] input,
+[data-testid="stDateInput"] input, [data-testid="stTimeInput"] input {
+    background-color: #252a3d !important;
+    color: #e8eaf0 !important;
+    border: 1px solid #3a4060 !important;
+    border-radius: 6px !important;
+}
+[data-baseweb="input"] { background-color: #252a3d !important; }
+
+/* ── Select / multiselect / radio ───────────────────────────────────────── */
+[data-baseweb="select"] > div, [data-baseweb="popover"],
+[data-testid="stSelectbox"] > div > div {
+    background-color: #252a3d !important;
+    color: #e8eaf0 !important;
+    border: 1px solid #3a4060 !important;
+}
+[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+    background-color: #3a4060 !important; color: #e8eaf0 !important;
+}
+[data-testid="stMultiSelect"] span { color: #e8eaf0 !important; }
+[data-testid="stRadio"] label, [data-testid="stRadio"] span { color: #e8eaf0 !important; }
+[data-testid="stRadio"] [data-testid="stMarkdownContainer"] * { color: #e8eaf0 !important; }
+[role="listbox"], [role="option"] {
+    background-color: #252a3d !important; color: #e8eaf0 !important;
+}
+
+/* ── Dropdown menu items ─────────────────────────────────────────────────── */
+[data-baseweb="menu"], [data-baseweb="menu"] li, [data-baseweb="menu"] ul {
+    background-color: #252a3d !important; color: #e8eaf0 !important;
+}
+
+/* ── Dataframe / table ───────────────────────────────────────────────────── */
+[data-testid="stDataFrame"], .stDataFrame,
+[data-testid="stDataFrame"] * {
+    background-color: #252a3d !important;
+    color: #e8eaf0 !important;
+}
+[data-testid="stDataFrame"] th {
+    background-color: #1e2130 !important;
+    color: #9aa0b8 !important;
+    border-bottom: 1px solid #3a4060 !important;
+}
+[data-testid="stDataFrame"] td { border-color: #3a4060 !important; }
+.dvn-scroller { background-color: #252a3d !important; }
+
+/* ── Expander ────────────────────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    background-color: #252a3d !important;
+    border: 1px solid #3a4060 !important;
+    border-radius: 8px !important;
+}
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary * { color: #e8eaf0 !important; }
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] { background-color: #252a3d !important; }
+
+/* ── Info / warning / success / error banners ───────────────────────────── */
+[data-testid="stAlert"] { border-radius: 8px !important; }
+[data-testid="stAlert"] * { color: #e8eaf0 !important; }
+.stSuccess  { background-color: #1a3a2a !important; border-left: 4px solid #4caf7d !important; }
+.stWarning  { background-color: #3a2e1a !important; border-left: 4px solid #ffaa44 !important; }
+.stError    { background-color: #3a1a1a !important; border-left: 4px solid #ff6b7a !important; }
+.stInfo     { background-color: #1a2a3a !important; border-left: 4px solid #4a9eff !important; }
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+[data-testid="stSpinner"] * { color: #4a9eff !important; }
+
+/* ── Code blocks ─────────────────────────────────────────────────────────── */
+[data-testid="stCode"], .stCode, pre, code {
+    background-color: #141720 !important;
+    color: #c5d0e8 !important;
+    border: 1px solid #3a4060 !important;
+}
+
+/* ── Download buttons ────────────────────────────────────────────────────── */
+[data-testid="stDownloadButton"] button {
+    background-color: #252a3d !important;
+    color: #4a9eff !important;
+    border: 1px solid #4a9eff !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+}
+[data-testid="stDownloadButton"] button:hover { background-color: #4a9eff !important; color: white !important; }
+[data-testid="stDownloadButton"] button * { color: inherit !important; }
+
+/* ── Divider ─────────────────────────────────────────────────────────────── */
+hr { border-color: #3a4060 !important; }
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #16192b; }
+::-webkit-scrollbar-thumb { background: #3a4060; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4a9eff; }
 </style>
 """, unsafe_allow_html=True)
 
