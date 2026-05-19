@@ -309,7 +309,29 @@ def _load_influx_config_from_repo() -> Optional[dict]:
 
     return cfg
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Public GitHub XML helper
+# ══════════════════════════════════════════════════════════════════════════════
 
+GITHUB_ALERT_XML_URL = (
+    "https://raw.githubusercontent.com/"
+    "RenovoSoln/Alert-monitoring/main/data/alerts_SHM_MAUD.xml"
+)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _download_public_github_xml() -> bytes:
+    response = requests.get(
+        GITHUB_ALERT_XML_URL,
+        timeout=30
+    )
+
+    if not response.ok:
+        raise RuntimeError(
+            f"GitHub raw XML download failed {response.status_code}: {response.text[:500]}"
+        )
+
+    return response.content
 # ══════════════════════════════════════════════════════════════════════════════
 # XML helpers
 # ══════════════════════════════════════════════════════════════════════════════
@@ -521,6 +543,53 @@ def _check_thresholds(max_df: pd.DataFrame, rules: List[dict]) -> pd.DataFrame:
     return pd.concat(hits, ignore_index=True) if hits else pd.DataFrame()
 
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Private GitHub XML helper
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _github_ok() -> bool:
+    required = [
+        "GITHUB_ALERT_TOKEN",
+        "GITHUB_OWNER",
+        "GITHUB_REPO",
+        "GITHUB_BRANCH",
+        "GITHUB_XML_PATH",
+    ]
+    return all(k in st.secrets for k in required)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _download_private_github_xml(
+    owner: str,
+    repo: str,
+    branch: str,
+    path_in_repo: str,
+    token: str
+) -> bytes:
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path_in_repo}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    response = requests.get(
+        url,
+        headers=headers,
+        params={"ref": branch},
+        timeout=30,
+    )
+
+    if not response.ok:
+        raise RuntimeError(
+            f"GitHub XML download failed {response.status_code}: {response.text[:500]}"
+        )
+
+    payload = response.json()
+    return base64.b64decode(payload["content"])
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Sidebar
 # ══════════════════════════════════════════════════════════════════════════════
@@ -536,58 +605,55 @@ with st.sidebar:
 
     st.markdown("### 📋 Alert History Source")
 
-github_ok = _github_ok()
+    xml_src = st.radio(
+        "src",
+        ["GitHub XML", "Upload XML"],
+        index=0,
+        label_visibility="collapsed"
+    )
 
-xml_src = st.radio(
-    "src",
-    ["GitHub", "Upload XML"],
-    index=0,
-    label_visibility="collapsed"
-)
+    xml_records: List[dict] = []
 
-xml_records: List[dict] = []
+    if xml_src == "GitHub XML":
+        c1, c2 = st.columns(2)
 
-if xml_src == "GitHub":
-    c1, c2 = st.columns(2)
+        if c1.button("Refresh", width="stretch"):
+            _download_private_github_xml.clear()
+            st.rerun()
 
-    if c1.button("Refresh", width="stretch"):
-        _download_github_xml.clear()
-        st.rerun()
+        if c2.button("Clear cache", width="stretch"):
+            st.cache_data.clear()
+            st.rerun()
 
-    if c2.button("Clear cache", width="stretch"):
-        st.cache_data.clear()
-        st.rerun()
+        if not _github_ok():
+            st.error("GitHub secrets are missing in Streamlit settings.")
+        else:
+            try:
+                xml_bytes = _download_private_github_xml(
+                    owner=st.secrets["GITHUB_OWNER"],
+                    repo=st.secrets["GITHUB_REPO"],
+                    branch=st.secrets["GITHUB_BRANCH"],
+                    path_in_repo=st.secrets["GITHUB_XML_PATH"],
+                    token=st.secrets["GITHUB_ALERT_TOKEN"],
+                )
 
-    if not github_ok:
-        st.error("GitHub secrets are missing.")
-    else:
-        try:
-            xml_bytes = _download_github_xml(
-                owner=st.secrets["GITHUB_OWNER"],
-                repo=st.secrets["GITHUB_REPO"],
-                branch=st.secrets["GITHUB_BRANCH"],
-                path_in_repo=st.secrets["GITHUB_XML_PATH"],
-                token=st.secrets["GITHUB_ALERT_TOKEN"],
-            )
+                xml_records = _parse_xml(xml_bytes)
 
-            xml_records = _parse_xml(xml_bytes)
+                st.success(
+                    f"Loaded {len(xml_records)} violations from GitHub"
+                )
 
-            st.success(
-                f"Loaded {len(xml_records)} violations from GitHub"
-            )
+                st.caption(
+                    f"{st.secrets['GITHUB_REPO']} / {st.secrets['GITHUB_XML_PATH']}"
+                )
 
-            st.caption(
-                f"{st.secrets['GITHUB_REPO']} / {st.secrets['GITHUB_XML_PATH']}"
-            )
+            except Exception as exc:
+                st.error(f"GitHub XML load failed: {exc}")
 
-        except Exception as exc:
-            st.error(f"GitHub XML load failed: {exc}")
-
-elif xml_src == "Upload XML":
-    up = st.file_uploader("Upload XML", type=["xml"])
-    if up:
-        xml_records = _parse_xml(up.read())
-
+    elif xml_src == "Upload XML":
+        up = st.file_uploader("Upload XML", type=["xml"])
+        if up:
+            xml_records = _parse_xml(up.read())
     st.markdown("---")
     df_full = _load_df(xml_records)
     if not df_full.empty:
