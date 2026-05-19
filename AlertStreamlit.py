@@ -56,7 +56,8 @@ primaryColor    = "#4a9eff"
 """
 
 from __future__ import annotations
-
+import base64
+import requests
 import io
 import json
 import time
@@ -295,11 +296,18 @@ def _download_file(file_id: str) -> bytes:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _load_influx_config(_folder_id: str) -> Optional[dict]:
-    files = _list_drive_files(_folder_id, "influx_config.json")
-    if not files:
+def _load_influx_config_from_repo() -> Optional[dict]:
+    config_path = Path("influx_config.json")
+
+    if not config_path.exists():
         return None
-    return json.loads(_download_file(files[0]["id"]).decode("utf-8"))
+
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+
+    if "INFLUX_TOKEN" in st.secrets:
+        cfg["token"] = st.secrets["INFLUX_TOKEN"]
+
+    return cfg
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -527,32 +535,58 @@ with st.sidebar:
     folder_id = st.secrets.get("GDRIVE_FOLDER_ID","") if gdrive_ok else ""
 
     st.markdown("### 📋 Alert History Source")
-    xml_src = st.radio("src", ["☁️ Google Drive","📤 Upload XML"],
-                       index=0, label_visibility="collapsed")
-    xml_records: List[dict] = []
 
-    if xml_src == "☁️ Google Drive" and gdrive_ok:
-        c1, c2 = st.columns(2)
-        if c1.button("🔄 Refresh", width="stretch"):
-            _download_file.clear(); st.rerun()
-        if c2.button("🗑️ Cache",   width="stretch"):
-            st.cache_data.clear();  st.rerun()
+github_ok = _github_ok()
+
+xml_src = st.radio(
+    "src",
+    ["GitHub", "Upload XML"],
+    index=0,
+    label_visibility="collapsed"
+)
+
+xml_records: List[dict] = []
+
+if xml_src == "GitHub":
+    c1, c2 = st.columns(2)
+
+    if c1.button("Refresh", width="stretch"):
+        _download_github_xml.clear()
+        st.rerun()
+
+    if c2.button("Clear cache", width="stretch"):
+        st.cache_data.clear()
+        st.rerun()
+
+    if not github_ok:
+        st.error("GitHub secrets are missing.")
+    else:
         try:
-            xfiles = _list_drive_files(folder_id, ".xml")
-            if xfiles:
-                labels = [f"{f['name']}  ({_fmt_size(int(f.get('size',0)))} · {_fmt_ts(f.get('modifiedTime',''))})"
-                          for f in xfiles]
-                idx = st.selectbox("XML file", range(len(xfiles)), format_func=lambda i: labels[i])
-                xml_records = _parse_xml(_download_file(xfiles[idx]["id"]))
-                st.success(f"✅ {len(xml_records)} violations loaded")
-            else:
-                st.warning("No XML files in Drive folder.")
+            xml_bytes = _download_github_xml(
+                owner=st.secrets["GITHUB_OWNER"],
+                repo=st.secrets["GITHUB_REPO"],
+                branch=st.secrets["GITHUB_BRANCH"],
+                path_in_repo=st.secrets["GITHUB_XML_PATH"],
+                token=st.secrets["GITHUB_ALERT_TOKEN"],
+            )
+
+            xml_records = _parse_xml(xml_bytes)
+
+            st.success(
+                f"Loaded {len(xml_records)} violations from GitHub"
+            )
+
+            st.caption(
+                f"{st.secrets['GITHUB_REPO']} / {st.secrets['GITHUB_XML_PATH']}"
+            )
+
         except Exception as exc:
-            st.error(f"Drive error: {exc}")
-    elif xml_src == "📤 Upload XML":
-        up = st.file_uploader("Upload XML", type=["xml"])
-        if up:
-            xml_records = _parse_xml(up.read())
+            st.error(f"GitHub XML load failed: {exc}")
+
+elif xml_src == "Upload XML":
+    up = st.file_uploader("Upload XML", type=["xml"])
+    if up:
+        xml_records = _parse_xml(up.read())
 
     st.markdown("---")
     df_full = _load_df(xml_records)
@@ -686,6 +720,54 @@ with tab_hist:
             f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json","application/json")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GitHub helpers
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _github_ok() -> bool:
+    required = [
+        "GITHUB_ALERT_TOKEN",
+        "GITHUB_OWNER",
+        "GITHUB_REPO",
+        "GITHUB_BRANCH",
+        "GITHUB_XML_PATH",
+    ]
+    return all(k in st.secrets for k in required)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _download_github_xml(
+    owner: str,
+    repo: str,
+    branch: str,
+    path_in_repo: str,
+    token: str
+) -> bytes:
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path_in_repo}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    response = requests.get(
+        url,
+        headers=headers,
+        params={"ref": branch},
+        timeout=30,
+    )
+
+    if not response.ok:
+        raise RuntimeError(
+            f"GitHub error {response.status_code}: {response.text}"
+        )
+
+    payload = response.json()
+    encoded = payload["content"]
+
+    return base64.b64decode(encoded)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # TAB 2 — Live InfluxDB Monitor
 # ──────────────────────────────────────────────────────────────────────────────
@@ -698,15 +780,15 @@ with tab_live:
 
     # ── Load config from Drive ────────────────────────────────────────────────
     cfg: Optional[dict] = None
-    if gdrive_ok:
-        try:
-            with st.spinner("Loading influx_config.json from Google Drive…"):
-                cfg = _load_influx_config(folder_id)
-        except Exception as exc:
-            st.error(f"Could not load config from Drive: {exc}")
+
+    try:
+        with st.spinner("Loading influx_config.json from GitHub repo…"):
+            cfg = _load_influx_config_from_repo()
+    except Exception as exc:
+        st.error(f"Could not load config from GitHub repo: {exc}")
 
     if cfg is None:
-        st.error("❌ `influx_config.json` not found in your Google Drive folder.")
+        st.error("influx_config.json not found in the Streamlit GitHub repository.")
         with st.expander("📖 How to create influx_config.json", expanded=True):
             st.code(json.dumps({
                 "url":             "http://your-influxdb:8086",
@@ -727,7 +809,7 @@ with tab_live:
                     "enabled":       True
                 }]
             }, indent=2), language="json")
-            st.markdown("Upload this file to your Google Drive folder, then reload the page.")
+            st.markdown("Add influx_config.json to the Streamlit GitHub repository, then redeploy or refresh the app.")
         st.stop()
 
     thresholds: List[dict] = cfg.get("thresholds", [])
