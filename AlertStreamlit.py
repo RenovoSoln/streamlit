@@ -260,6 +260,38 @@ hr { border-color: #3a4060 !important; }
 </style>
 """, unsafe_allow_html=True)
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _download_private_github_json(
+    owner: str,
+    repo: str,
+    branch: str,
+    path_in_repo: str,
+    token: str
+) -> dict:
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path_in_repo}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    response = requests.get(
+        url,
+        headers=headers,
+        params={"ref": branch},
+        timeout=30,
+    )
+
+    if not response.ok:
+        raise RuntimeError(
+            f"GitHub JSON download failed {response.status_code}: {response.text[:500]}"
+        )
+
+    payload = response.json()
+    file_bytes = base64.b64decode(payload["content"])
+
+    return json.loads(file_bytes.decode("utf-8"))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Google Drive helpers
@@ -786,6 +818,9 @@ with tab_hist:
             f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json","application/json")
 
 
+
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # GitHub helpers
 # ══════════════════════════════════════════════════════════════════════════════
@@ -848,13 +883,20 @@ with tab_live:
     cfg: Optional[dict] = None
 
     try:
-        with st.spinner("Loading influx_config.json from GitHub repo…"):
-            cfg = _load_influx_config_from_repo()
+        with st.spinner("Loading influx_config.json from private GitHub repo..."):
+            cfg = _download_private_github_json(
+            owner=st.secrets["GITHUB_OWNER"],
+            repo=st.secrets["GITHUB_REPO"],
+            branch=st.secrets["GITHUB_BRANCH"],
+            path_in_repo=st.secrets.get("GITHUB_CONFIG_PATH", "influx_config.json"),
+            token=st.secrets["GITHUB_ALERT_TOKEN"],
+            )
     except Exception as exc:
-        st.error(f"Could not load config from GitHub repo: {exc}")
+        st.error(f"Could not load influx_config.json from GitHub: {exc}")
 
     if cfg is None:
-        st.error("influx_config.json not found in the Streamlit GitHub repository.")
+        st.error("influx_config.json was not loaded from GitHub.")
+        st.stop()
         with st.expander("📖 How to create influx_config.json", expanded=True):
             st.code(json.dumps({
                 "url":             "http://your-influxdb:8086",
