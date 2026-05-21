@@ -260,38 +260,6 @@ hr { border-color: #3a4060 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=300, show_spinner=False)
-def _download_private_github_json(
-    owner: str,
-    repo: str,
-    branch: str,
-    path_in_repo: str,
-    token: str
-) -> dict:
-    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path_in_repo}"
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-
-    response = requests.get(
-        url,
-        headers=headers,
-        params={"ref": branch},
-        timeout=30,
-    )
-
-    if not response.ok:
-        raise RuntimeError(
-            f"GitHub JSON download failed {response.status_code}: {response.text[:500]}"
-        )
-
-    payload = response.json()
-    file_bytes = base64.b64decode(payload["content"])
-
-    return json.loads(file_bytes.decode("utf-8"))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Google Drive helpers
@@ -327,43 +295,55 @@ def _download_file(file_id: str) -> bytes:
     return buf.getvalue()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def _load_influx_config_from_repo() -> Optional[dict]:
-    config_path = Path("influx_config.json")
-
-    if not config_path.exists():
-        return None
-
-    cfg = json.loads(config_path.read_text(encoding="utf-8"))
-
-    if "INFLUX_TOKEN" in st.secrets:
-        cfg["token"] = st.secrets["INFLUX_TOKEN"]
-
-    return cfg
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Public GitHub XML helper
-# ══════════════════════════════════════════════════════════════════════════════
-
-GITHUB_ALERT_XML_URL = (
-    "https://raw.githubusercontent.com/"
-    "RenovoSoln/Alert-monitoring/main/data/alerts_SHM_MAUD.xml"
-)
+@st.cache_data(ttl=60, show_spinner=False)
+def _list_github_dir_files(owner: str, repo: str, branch: str, dir_path: str, token: str) -> List[str]:
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{dir_path}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    try:
+        response = requests.get(url, headers=headers, params={"ref": branch}, timeout=15)
+        if response.ok:
+            return [item["path"] for item in response.json() if item["type"] == "file"]
+    except Exception:
+        pass
+    return []
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _download_public_github_xml() -> bytes:
-    response = requests.get(
-        GITHUB_ALERT_XML_URL,
-        timeout=30
-    )
+def _download_github_json(
+    owner: str,
+    repo: str,
+    branch: str,
+    path_in_repo: str,
+    token: str
+) -> Optional[dict]:
+    try:
+        data_bytes = _download_github_xml(owner, repo, branch, path_in_repo, token)
+        cfg = json.loads(data_bytes.decode("utf-8", errors="replace"))
+        if "INFLUX_TOKEN" in st.secrets:
+            cfg["token"] = st.secrets["INFLUX_TOKEN"]
+        return cfg
+    except Exception:
+        return None
 
-    if not response.ok:
-        raise RuntimeError(
-            f"GitHub raw XML download failed {response.status_code}: {response.text[:500]}"
-        )
 
-    return response.content
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_influx_config_from_repo() -> Optional[dict]:
+    config_path = Path("influx_config.json")
+    if not config_path.exists():
+        return None
+    try:
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        if "INFLUX_TOKEN" in st.secrets:
+            cfg["token"] = st.secrets["INFLUX_TOKEN"]
+        return cfg
+    except Exception:
+        return None
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # XML helpers
 # ══════════════════════════════════════════════════════════════════════════════
@@ -575,53 +555,6 @@ def _check_thresholds(max_df: pd.DataFrame, rules: List[dict]) -> pd.DataFrame:
     return pd.concat(hits, ignore_index=True) if hits else pd.DataFrame()
 
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Private GitHub XML helper
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _github_ok() -> bool:
-    required = [
-        "GITHUB_ALERT_TOKEN",
-        "GITHUB_OWNER",
-        "GITHUB_REPO",
-        "GITHUB_BRANCH",
-        "GITHUB_XML_PATH",
-    ]
-    return all(k in st.secrets for k in required)
-
-
-@st.cache_data(ttl=60, show_spinner=False)
-def _download_private_github_xml(
-    owner: str,
-    repo: str,
-    branch: str,
-    path_in_repo: str,
-    token: str
-) -> bytes:
-    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path_in_repo}"
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-
-    response = requests.get(
-        url,
-        headers=headers,
-        params={"ref": branch},
-        timeout=30,
-    )
-
-    if not response.ok:
-        raise RuntimeError(
-            f"GitHub XML download failed {response.status_code}: {response.text[:500]}"
-        )
-
-    payload = response.json()
-    return base64.b64decode(payload["content"])
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Sidebar
 # ══════════════════════════════════════════════════════════════════════════════
@@ -637,55 +570,142 @@ with st.sidebar:
 
     st.markdown("### 📋 Alert History Source")
 
-    xml_src = st.radio(
-        "src",
-        ["GitHub XML", "Upload XML"],
-        index=0,
-        label_visibility="collapsed"
-    )
+github_ok = _github_ok()
 
-    xml_records: List[dict] = []
+xml_src = st.radio(
+    "src",
+    ["GitHub", "Upload XML"],
+    index=0,
+    label_visibility="collapsed"
+)
 
-    if xml_src == "GitHub XML":
-        c1, c2 = st.columns(2)
+xml_records: List[dict] = []
 
-        if c1.button("Refresh", width="stretch"):
-            _download_private_github_xml.clear()
-            st.rerun()
+if xml_src == "GitHub":
+    c1, c2 = st.columns(2)
 
-        if c2.button("Clear cache", width="stretch"):
-            st.cache_data.clear()
-            st.rerun()
+    if c1.button("Refresh", width="stretch"):
+        _download_github_xml.clear()
+        _list_github_dir_files.clear()
+        _download_github_json.clear()
+        st.rerun()
 
-        if not _github_ok():
-            st.error("GitHub secrets are missing in Streamlit settings.")
-        else:
+    if c2.button("Clear cache", width="stretch"):
+        st.cache_data.clear()
+        st.rerun()
+
+    if not github_ok:
+        st.error("GitHub secrets are missing.")
+    else:
+        try:
+            owner = st.secrets["GITHUB_OWNER"]
+            repo = st.secrets["GITHUB_REPO"]
+            branch = st.secrets["GITHUB_BRANCH"]
+            token = st.secrets["GITHUB_ALERT_TOKEN"]
+
+            # 1. Fetch file list from GitHub data directory
+            repo_files = _list_github_dir_files(owner, repo, branch, "data", token)
+            
+            # Filter xml and json files
+            xml_files = [f for f in repo_files if f.endswith(".xml")]
+            json_files = [f for f in repo_files if f.endswith(".json")]
+
+            # Ensure GITHUB_XML_PATH from secrets is included
+            default_xml_path = st.secrets.get("GITHUB_XML_PATH", "data/alert_SHM_MAUD.xml")
+            if default_xml_path not in xml_files:
+                xml_files.append(default_xml_path)
+
+            xml_files = sorted(list(set(xml_files)))
+
+            # Auto-pre-select the singular one (like data/alert_SHM_MAUD.xml)
+            default_index = 0
+            for idx, f in enumerate(xml_files):
+                # Prefer singular over plural
+                if "alert_SHM_" in f and "alerts_SHM_" not in f:
+                    default_index = idx
+                    break
+
+            st.markdown("### 📊 Select Alert XML File")
+            selected_xml_path = st.selectbox(
+                "XML Path Selection",
+                options=xml_files,
+                index=default_index,
+                label_visibility="collapsed"
+            )
+
+            # Download selected XML file
+            xml_bytes = _download_github_xml(
+                owner=owner,
+                repo=repo,
+                branch=branch,
+                path_in_repo=selected_xml_path,
+                token=token,
+            )
+
+            xml_records = _parse_xml(xml_bytes)
+
+            st.success(
+                f"Loaded {len(xml_records)} violations from {Path(selected_xml_path).name}"
+            )
+
+            st.caption(
+                f"{repo} / {selected_xml_path}"
+            )
+
+            # 2. Select JSON config file
+            st.markdown("### ⚙️ Select Config JSON File")
+            
+            # Local json options as fallback
+            local_json_files = ["influx_config.json"]
+            # Look at other local influx_alert_config_*.json files in root
             try:
-                xml_bytes = _download_private_github_xml(
-                    owner=st.secrets["GITHUB_OWNER"],
-                    repo=st.secrets["GITHUB_REPO"],
-                    branch=st.secrets["GITHUB_BRANCH"],
-                    path_in_repo=st.secrets["GITHUB_XML_PATH"],
-                    token=st.secrets["GITHUB_ALERT_TOKEN"],
-                )
+                for p in Path(".").glob("influx_alert_config_*.json"):
+                    local_json_files.append(str(p.as_posix()))
+            except Exception:
+                pass
 
-                xml_records = _parse_xml(xml_bytes)
+            all_json_options = sorted(list(set(json_files + local_json_files)))
 
-                st.success(
-                    f"Loaded {len(xml_records)} violations from GitHub"
-                )
+            # Match slug from XML to JSON (e.g. Maud -> Maud)
+            default_json_index = 0
+            system_slug = ""
+            if "MAUD" in selected_xml_path.upper():
+                system_slug = "Maud"
+            else:
+                # Find if any other upper case name is in the XML name
+                xml_name_upper = Path(selected_xml_path).stem.upper()
+                for option in all_json_options:
+                    opt_stem_upper = Path(option).stem.upper()
+                    for part in opt_stem_upper.split("_"):
+                        if len(part) > 2 and part in xml_name_upper:
+                            system_slug = part
+                            break
 
-                st.caption(
-                    f"{st.secrets['GITHUB_REPO']} / {st.secrets['GITHUB_XML_PATH']}"
-                )
+            if system_slug:
+                for idx, f in enumerate(all_json_options):
+                    if system_slug.upper() in f.upper():
+                        default_json_index = idx
+                        break
 
-            except Exception as exc:
-                st.error(f"GitHub XML load failed: {exc}")
+            selected_json_path = st.selectbox(
+                "JSON Path Selection",
+                options=all_json_options,
+                index=default_json_index,
+                label_visibility="collapsed"
+            )
 
-    elif xml_src == "Upload XML":
-        up = st.file_uploader("Upload XML", type=["xml"])
-        if up:
-            xml_records = _parse_xml(up.read())
+            # Save in session state for tab_live
+            st.session_state["selected_xml_path"] = selected_xml_path
+            st.session_state["selected_json_path"] = selected_json_path
+
+        except Exception as exc:
+            st.error(f"GitHub load failed: {exc}")
+
+elif xml_src == "Upload XML":
+    up = st.file_uploader("Upload XML", type=["xml"])
+    if up:
+        xml_records = _parse_xml(up.read())
+
     st.markdown("---")
     df_full = _load_df(xml_records)
     if not df_full.empty:
@@ -818,9 +838,6 @@ with tab_hist:
             f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json","application/json")
 
 
-
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # GitHub helpers
 # ══════════════════════════════════════════════════════════════════════════════
@@ -879,45 +896,33 @@ with tab_live:
         st.error("influxdb-client not installed — add it to requirements.txt and redeploy.")
         st.stop()
 
-    # ── Load config from Drive ────────────────────────────────────────────────
+    # ── Load config from GitHub or Local ──────────────────────────────────────
     cfg: Optional[dict] = None
+    selected_json_path = st.session_state.get("selected_json_path", "influx_config.json")
 
     try:
-        with st.spinner("Loading influx_config.json from private GitHub repo..."):
-            cfg = _download_private_github_json(
-            owner=st.secrets["GITHUB_OWNER"],
-            repo=st.secrets["GITHUB_REPO"],
-            branch=st.secrets["GITHUB_BRANCH"],
-            path_in_repo=st.secrets.get("GITHUB_CONFIG_PATH", "influx_config.json"),
-            token=st.secrets["GITHUB_ALERT_TOKEN"],
-            )
+        with st.spinner(f"Loading {Path(selected_json_path).name}…"):
+            if github_ok and selected_json_path.startswith("data/"):
+                cfg = _download_github_json(
+                    owner=st.secrets["GITHUB_OWNER"],
+                    repo=st.secrets["GITHUB_REPO"],
+                    branch=st.secrets["GITHUB_BRANCH"],
+                    path_in_repo=selected_json_path,
+                    token=st.secrets["GITHUB_ALERT_TOKEN"],
+                )
+            else:
+                config_path = Path(selected_json_path)
+                if config_path.exists():
+                    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+                    if "INFLUX_TOKEN" in st.secrets:
+                        cfg["token"] = st.secrets["INFLUX_TOKEN"]
     except Exception as exc:
-        st.error(f"Could not load influx_config.json from GitHub: {exc}")
+        st.error(f"Could not load config {selected_json_path}: {exc}")
 
     if cfg is None:
-        st.error("influx_config.json was not loaded from GitHub.")
-        st.stop()
-        with st.expander("📖 How to create influx_config.json", expanded=True):
-            st.code(json.dumps({
-                "url":             "http://your-influxdb:8086",
-                "token":           "your-token",
-                "org":             "your-org",
-                "bucket":          "shm",
-                "project":         "SHM_MAUD",
-                "fields":          ["velx","vely","velz"],
-                "aggregate_every": "5ms",
-                "aggregate_fn":    "mean",
-                "thresholds": [{
-                    "name":          "Velocity Warning",
-                    "sensor_filter": "All",
-                    "dimension":     "All",
-                    "operator":      ">=",
-                    "value":         0.001,
-                    "alert_level":   "Warning",
-                    "enabled":       True
-                }]
-            }, indent=2), language="json")
-            st.markdown("Add influx_config.json to the Streamlit GitHub repository, then redeploy or refresh the app.")
+        st.error(f"Configuration file '{selected_json_path}' could not be loaded.")
+        with st.expander("📖 How to configure", expanded=True):
+            st.markdown(f"Please save configuration using the GUI, which commits it to `{selected_json_path}` on GitHub.")
         st.stop()
 
     thresholds: List[dict] = cfg.get("thresholds", [])
