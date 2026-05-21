@@ -1106,7 +1106,13 @@ with tab_live:
         st.stop()
 
     # ── Compute ───────────────────────────────────────────────────────────────
-    mv_df   = _timeseries_abs(frame, cfg["fields"])
+    # Get monitored dimensions (exclude "rssi" and non-monitored fields from thresholds and charts)
+    monitor_opt = cfg.get("monitor", {})
+    mon_dims = monitor_opt.get("selected_dimensions", [])
+    if not mon_dims:
+        mon_dims = [f for f in cfg.get("fields", []) if f != "rssi"]
+
+    mv_df   = _timeseries_abs(frame, mon_dims)
     max_df  = _global_max(mv_df)
     viol_df = _check_thresholds(max_df, thresholds)
     violated = (set(zip(viol_df["sensor"], viol_df["dimension"]))
@@ -1117,7 +1123,7 @@ with tab_live:
     k1,k2,k3,k4,k5 = st.columns(5)
     k1.metric("Sensors",     frame["device_name"].nunique())
     k2.metric("Data Points", f"{len(frame):,}")
-    k3.metric("Dimensions",  len(cfg["fields"]))
+    k3.metric("Dimensions",  len(mon_dims))
     k4.metric("Violations",  len(viol_df) if not viol_df.empty else 0)
     k5.metric("Critical",    int((viol_df["alert_level"]=="Critical").sum())
                              if not viol_df.empty else 0)
