@@ -311,6 +311,20 @@ def _list_github_dir_files(owner: str, repo: str, branch: str, dir_path: str, to
     return []
 
 
+def _normalize_config(cfg: dict) -> dict:
+    if not cfg:
+        return cfg
+    if "influx" in cfg and isinstance(cfg["influx"], dict):
+        for k, v in cfg["influx"].items():
+            if k not in cfg:
+                cfg[k] = v
+    if "INFLUX_TOKEN" in st.secrets:
+        cfg["token"] = st.secrets["INFLUX_TOKEN"]
+        if "influx" in cfg and isinstance(cfg["influx"], dict):
+            cfg["influx"]["token"] = st.secrets["INFLUX_TOKEN"]
+    return cfg
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def _download_github_json(
     owner: str,
@@ -321,9 +335,7 @@ def _download_github_json(
 ) -> Optional[dict]:
     try:
         cfg = _download_private_github_json(owner, repo, branch, path_in_repo, token)
-        if "INFLUX_TOKEN" in st.secrets:
-            cfg["token"] = st.secrets["INFLUX_TOKEN"]
-        return cfg
+        return _normalize_config(cfg)
     except Exception:
         return None
 
@@ -369,11 +381,7 @@ def _load_influx_config_from_repo() -> Optional[dict]:
         return None
 
     cfg = json.loads(config_path.read_text(encoding="utf-8"))
-
-    if "INFLUX_TOKEN" in st.secrets:
-        cfg["token"] = st.secrets["INFLUX_TOKEN"]
-
-    return cfg
+    return _normalize_config(cfg)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Public GitHub XML helper
@@ -1014,8 +1022,7 @@ with tab_live:
                 config_path = Path(selected_json_path)
                 if config_path.exists():
                     cfg = json.loads(config_path.read_text(encoding="utf-8"))
-                    if "INFLUX_TOKEN" in st.secrets:
-                        cfg["token"] = st.secrets["INFLUX_TOKEN"]
+                    cfg = _normalize_config(cfg)
     except Exception as exc:
         st.error(f"Could not load config {selected_json_path}: {exc}")
 
